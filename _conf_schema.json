@@ -34,5 +34,35 @@
         "type": "bool",
         "default": false,
         "hint": "开启后将只返回非 AI 生成的图片（aiType=0）"
+    },
+    "auto_recall": {
+        "description": "是否自动撤回发送的图片",
+        "type": "bool",
+        "default": false,
+        "hint": "开启后将在指定时间后自动撤回图片消息（仅 QQ 平台有效）"
+    },
+    "recall_time": {
+        "description": "自动撤回时间（秒）",
+        "type": "int",
+        "default": 60,
+        "hint": "发送后多少秒撤回，QQ 限制最长 120 秒"
+    },
+    "forward_fallback": {
+        "description": "合并转发失败时是否回退为普通图片发送",
+        "type": "bool",
+        "default": true,
+        "hint": "开启后合并转发失败将自动改为逐张普通图片发送，关闭则发送报错信息"
+    },
+    "send_interval": {
+        "description": "发送图片之间的间隔（秒）",
+        "type": "float",
+        "default": 1.0,
+        "hint": "逐张发送图片时，每张图片之间的最小间隔"
+    },
+    "send_retry": {
+        "description": "发送失败后的重试次数",
+        "type": "int",
+        "default": 2,
+        "hint": "bot API 发送超时后的重试次数，采用指数退避"
     }
 }
