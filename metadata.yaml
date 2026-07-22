@@ -1,0 +1,6 @@
+name: astrbot_plugin_setu
+desc: 基于 Lolicon API 的随机动漫图片插件
+help: "输入 /p 获取随机图片，支持标签搜索，如 /p 萝莉 白丝"
+version: v1.0.0
+author: wjy
+repo: "https://github.com/Jaeu7/astrbot_plugin_setu"

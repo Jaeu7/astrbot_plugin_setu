@@ -1,0 +1,38 @@
+{
+    "r18": {
+        "description": "是否开启 R18 内容",
+        "type": "bool",
+        "default": false,
+        "hint": "开启后将可能返回 R18 图片，请遵守相关法律法规"
+    },
+    "max_num": {
+        "description": "单次请求最多返回的图片数量",
+        "type": "int",
+        "default": 3,
+        "hint": "范围 1-20，超过将自动截断"
+    },
+    "proxy": {
+        "description": "图片代理地址",
+        "type": "string",
+        "default": "i.pixiv.re",
+        "hint": "用于加速图片访问，默认使用 i.pixiv.re"
+    },
+    "size": {
+        "description": "返回的图片规格",
+        "type": "string",
+        "default": "regular",
+        "hint": "可选：original, regular, small, thumb, mini"
+    },
+    "use_forward": {
+        "description": "是否以聊天记录形式发送图片",
+        "type": "bool",
+        "default": false,
+        "hint": "开启后多张图片会以合并转发消息形式发出（类似聊天记录），仅部分平台支持"
+    },
+    "filter_ai": {
+        "description": "是否过滤 AI 生成的作品",
+        "type": "bool",
+        "default": false,
+        "hint": "开启后将只返回非 AI 生成的图片（aiType=0）"
+    }
+}
