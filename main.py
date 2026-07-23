@@ -242,7 +242,7 @@ class SetuPlugin(Star):
             payload["tag"] = tags
 
         try:
-            connector = aiohttp.TCPConnector(limit_per_host=10)
+            connector = aiohttp.TCPConnector(limit_per_host=10, ssl=False)
             timeout = aiohttp.ClientTimeout(total=30)
             async with aiohttp.ClientSession(connector=connector, timeout=timeout, trust_env=False) as session:
                 result_list = []
@@ -269,7 +269,16 @@ class SetuPlugin(Star):
                                 return
                             break
 
-                        data = await resp.json()
+                        try:
+                            data = await resp.json(content_type=None)
+                        except Exception as e:
+                            logger.error(f"[SetuPlugin] JSON 解析失败: {e}")
+                            if not result_list:
+                                event.set_result(MessageEventResult().message("API 响应解析失败，可能被 DNS 污染，请稍后重试~"))
+                                event.should_call_llm(True)
+                                return
+                            break
+
                         logger.debug(f"[SetuPlugin] 响应数据类型: {type(data).__name__}")
                         logger.debug(f"[SetuPlugin] 响应数据: {data}")
 
@@ -289,10 +298,8 @@ class SetuPlugin(Star):
 
                         logger.info(f"[SetuPlugin] batch 长度: {len(batch)}")
 
-                        # 保存 API 原始返回数量，用于判断是否还有更多
                         original_batch_len = len(batch)
 
-                        # 客户端过滤 AI 作品
                         if filter_ai:
                             before = len(batch)
                             batch = [item for item in batch if item.get("aiType", 0) == 0]
@@ -300,7 +307,6 @@ class SetuPlugin(Star):
 
                         result_list.extend(batch)
 
-                        # 如果 API 返回的数量本身就不够，说明库里没更多了
                         if original_batch_len < req_num:
                             break
 
