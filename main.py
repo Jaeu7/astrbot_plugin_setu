@@ -104,7 +104,7 @@ class SetuPlugin(Star):
         return None
 
     async def _send_image_once(self, bot, is_group, session_id, b64_str, routing_params):
-        """单次发送单张图片，返回 message_id，失败返回 None"""
+        """单次发送单张图片，返回 (message_id, is_timeout)，失败返回 (None, is_timeout)"""
         try:
             msg = [{"type": "image", "data": {"file": f"base64://{b64_str}"}}]
             if is_group:
@@ -118,10 +118,16 @@ class SetuPlugin(Star):
                                                message=msg,
                                                **routing_params)
             if isinstance(result, dict) and result.get("message_id"):
-                return result["message_id"]
+                return result["message_id"], False
         except Exception as e:
-            logger.error(f"[SetuPlugin] 图片发送失败: {e}")
-        return None
+            err_str = str(e)
+            is_timeout = "Timeout" in err_str or "1200" in err_str
+            if is_timeout:
+                logger.warning(f"[SetuPlugin] 图片发送超时（QQ 风控），跳过重试")
+            else:
+                logger.error(f"[SetuPlugin] 图片发送失败: {e}")
+            return None, is_timeout
+        return None, False
 
     async def _send_with_bot(self, event, is_forward, nodes, img_b64_list, recall_time, enable_recall=False):
         """通过 bot API 发送，逐张独立发送，部分失败不影响其他。返回发送结果列表 [(index, True/False)]"""
@@ -144,6 +150,7 @@ class SetuPlugin(Star):
 
         results = []
         send_interval = self._get_conf("send_interval", 1.0)
+        send_retry = self._get_conf("send_retry", 2)
 
         if is_forward and nodes:
             payload = await nodes.to_dict()
@@ -156,14 +163,27 @@ class SetuPlugin(Star):
                 results.append((0, False))
         else:
             for idx, b64 in enumerate(img_b64_list):
-                mid = await self._send_image_once(bot, is_group, session_id, b64, routing_params)
+                mid = None
+                for attempt in range(send_retry + 1):
+                    mid, is_timeout = await self._send_image_once(bot, is_group, session_id, b64, routing_params)
+                    if mid:
+                        break
+                    # 超时不重试（浪费时间），其他错误才重试
+                    if is_timeout or attempt >= send_retry:
+                        break
+                    backoff = min(2 ** attempt, 5)
+                    logger.info(f"[SetuPlugin] 图片 {idx+1} 发送失败，{backoff} 秒后重试 ({attempt+1}/{send_retry})")
+                    await asyncio.sleep(backoff)
+
                 if mid:
                     if enable_recall:
                         asyncio.create_task(self._recall_message(bot, mid, recall_time))
                     results.append((idx, True))
                 else:
                     results.append((idx, False))
-                await asyncio.sleep(send_interval)
+
+                if idx < len(img_b64_list) - 1:
+                    await asyncio.sleep(send_interval)
 
         return results
 
@@ -341,23 +361,44 @@ class SetuPlugin(Star):
 
                 # 普通图片发送逻辑（封装为函数以便回退复用）
                 async def _send_normal_images():
-                    # 通过 bot API 逐张独立发送
+                    # 通过 bot API 逐张独立发送（含重试）
                     sent_results = await self._send_with_bot(event, False, None, img_b64_list, recall_time, enable_recall=auto_recall)
+
+                    # bot API 不可用，走 event.send
+                    if not sent_results:
+                        for b64 in img_b64_list:
+                            try:
+                                await event.send(MessageChain(chain=[Image.fromBase64(b64)]))
+                                await asyncio.sleep(0.5)
+                            except Exception as e:
+                                logger.error(f"[SetuPlugin] 图片发送失败: {e}")
+                        event.set_result(MessageEventResult().message("图片发送失败，可能被风控~"))
+                        event.should_call_llm(True)
+                        return
+
                     failed_indices = [idx for idx, success in sent_results if not success]
+                    success_count = len(sent_results) - len(failed_indices)
+
                     if not failed_indices:
                         event.should_call_llm(True)
                         return
-                    # 补发失败的图片（走 aiocqhttp 发送）
+
+                    # 全部失败，不再尝试 event.send（同样会超时）
+                    if success_count == 0:
+                        event.set_result(MessageEventResult().message("图片发送失败，可能被风控，请稍后重试~"))
+                        event.should_call_llm(True)
+                        return
+
+                    # 部分失败，尝试 event.send 补发
                     for idx in failed_indices:
                         if idx < len(img_b64_list):
                             try:
                                 await event.send(MessageChain(chain=[Image.fromBase64(img_b64_list[idx])]))
                                 await asyncio.sleep(0.5)
                             except Exception as e:
-                                logger.error(f"[SetuPlugin] 图片发送失败: {e}")
-                                event.set_result(MessageEventResult().message("图片发送失败，可能被风控~"))
-                                event.should_call_llm(True)
-                                return
+                                logger.error(f"[SetuPlugin] 图片 {idx+1} 补发失败: {e}")
+
+                    event.set_result(MessageEventResult().message(f"部分图片发送失败（成功 {success_count}/{len(img_b64_list)}），可能被风控~"))
                     event.should_call_llm(True)
 
                 if use_forward:
